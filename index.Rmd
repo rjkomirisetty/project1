@@ -19,14 +19,20 @@ tidy=TRUE, tidy.opts=list(width.cutoff=60), R.options=list(max.print=100))
 
 ## Data Wrangling, Exploration, Visualization
 
-### Name and EID here
+### Raajkiran Komirisetty rk26579
 
 #### Introduction 
 
-Paragraph or two introducing your datasets and variables, why they are interesting to you, etc.
+The datasets I am using for this project are "raptor_by_player" and "nba_tattoos" from fivethirtyeight. I wanted to do something basketball related because I'm an NBA fan and I've like using analytics as a better way to analyze the game. The raptor_by_player dataset using a metric called "RAPTOR" to evaluate NBA players. It incorporates box score data such as points and rebounds, and combines it with team performance data such as net rating to create a single number rating for offense and defense. These two values are then averaged to create a single number metric. The "nba_tattoos" dataset contains a list of NBA players and whether or not they have tattoos. I picked these two datasets because I've always observed the best players don't have tattoos and I wanted to test that theory. 
 
 ```{R}
-# read your datasets in here, e.g., with read_csv()
+library(fivethirtyeight)
+library(fivethirtyeightdata)
+library(tidyverse)
+library(ggplot2)
+library(gt)
+tattoos <- nba_tattoos
+raptors <- raptor_by_player
 
 ```
 
@@ -35,52 +41,124 @@ Paragraph or two introducing your datasets and variables, why they are interesti
 If your datasets are tidy already, demonstrate that you can reshape data with pivot wider/longer here (e.g., untidy and then retidy). Alternatively, it may be easier to wait until the wrangling section so you can reshape your summary statistics. Note here if you are going to do this.
 
 ```{R}
-# your tidying code (if applicable; can also wait until wrangling section)
+# I will reshape my summary statistics 
 ```
 
+The data is already tidy so I will use the pivot functions in my summary statistics. 
     
 #### Joining/Merging
 
 ```{R}
-# your joining code
+players <- inner_join(raptors, tattoos, by = "player_name")
+length(unique(raptors$player_name))
+
+sum(!tattoos$player_name %in% raptors$player_name)
+#tattoos$player_name[!tattoos$player_name %in% raptors$player_name]
+
+sum(!unique(raptors$player_name) %in% tattoos$player_name)
+#unique(raptors$player_name)[!unique(raptors$player_name) %in% tattoos$player_name]
+
+length(unique(players$player_name))
 
 # your joining code
 ```
 
-Discussions of joining here. Feel encouraged to break up into more than once code chunk and discuss each in turn.
+I chose to do an Inner Join because I wanted to only deal with players that are included in both datasets. This is because I will need variables from both datasets to do my analysis. I joined them by player_name because that is the only variable they have in common. The "raptors" dataset contains 20,492 entries and the tattoos dataset contains 636 entries. The tattoos dataset contains 636 unique IDs and the raptors dataset contains 3232 unique IDs. There are 20 IDs in the tattoos dataset that are not found in the raptors dataset. There are 2616 IDs in the raptors dataset that are not in the tattoos dataset. The two datasets have 616 IDs in common.  That means 20 IDs were lost from tattoos dataset and 2616 IDs were lost from raptors. This should not be a concern because there are still significant sample size in both categories. 
 
 ####  Wrangling
 
 ```{R}
-# your wrangling code
+#wrangling exploration
+total_minutes <- players %>% group_by(player_name) %>% summarize(totmin = sum(mp))
+players <- inner_join(players, total_minutes, by = "player_name")
+players <- players %>% mutate(minperc = mp / totmin)
+players <- players %>% mutate(weighed_rap = raptor_total * minperc)
+player_ratings <- players %>% filter(totmin > 100) %>% group_by(player_name) %>% summarize(raptor = sum(weighed_rap)) %>% arrange(desc(raptor))
+
+head(player_ratings)
+
+player_ratings[str_detect(player_ratings$player_name, "Michael"),]
 
 # your wrangling code
+#Summary stats tables
+averages <- players %>% select(c(7:17)) %>% summarize_all(.funs = mean, na.rm = T)
+deviations <- players %>% select(c(7:17)) %>% summarize_all(.funs = sd, na.rm = T)
+variances <- players %>% select(c(7:17)) %>% summarize_all(.funs = var, na.rm = T)
+minimums <- players %>% select(c(7:17)) %>% summarize_all(.funs = min, na.rm = T)
+maximums <- players %>% select(c(7:17)) %>% summarize_all(.funs = max, na.rm = T)
+nacounter <- function(x){
+  return(sum(is.na(x)))
+}
+NACounts <- players %>% select(c(7:17)) %>% summarize_all(.funs = nacounter)
 
-# your wrangling code
+
+mean_by_era <- players %>% group_by(era) %>% select(c(7:17)) %>% summarize_all(.funs = mean, na.rm = T)
+mean_by_tattoo <- players %>% group_by(tattoos) %>% select(c(7:17)) %>% summarize_all(.funs = mean, na.rm = T)
+max_by_tattoo <- players %>% filter(totmin > 100) %>% group_by(tattoos) %>% select(c(7:17)) %>% summarize_all(.funs = max, na.rm = T)
+mean_by_grouped <- players %>% group_by(era, tattoos) %>% select(c(7:17)) %>% summarize_all(.funs = mean, na.rm = T)
+
+era_count <- players %>% group_by(era) %>% summarize(n())
+season_count <- players %>% group_by(player_name) %>% summarize(n())
+tattoo_count <- players %>% group_by(tattoos) %>% summarize(n())
+era_count
+season_count
+tattoo_count
+
+summary_stats <- rbind(averages, deviations, variances, maximums, minimums)                                                            
+summary_stats <- data.frame(SummaryStat = c("Averages", "Deviations", "Variances", "Maximums", "Minimums"), summary_stats)
+summary_stats <- summary_stats %>% pivot_longer(2:12, names_to= "Player Metric", values_to = "Summary Stat")
+head(summary_stats)
+head(mean_by_grouped)
+
+
+gtable<- player_ratings %>% filter(raptor > 5) %>% gt() %>% cols_label(player_name = "Player", raptor = "Rating") %>% tab_header(title=md("Most Impactful Players"), subtitle=md("The most impactful players since 1999 by average RAPTOR score")) 
+
+gtable
+
 ```
 
-Your discussion of wrangling section here. Feel encouraged to break up into more than once code chunk and discuss each in turn.
+I first decided to create a new variable called weighed_raptor which is a weighted version of total_raptor based on minutes played that season. For example if a player played 90% of their minutes with a 3.0 score and 10% of their minutes at a 4.0 score their weighted will be 3.1. I first used summarize to total the minutes and added that variable back into the original dataset. I then multiplied the raptor_total by mp and divided that by total minutes. I summed this new value by player_name to get weighted raptor. Chris Paul, Stephen Curry, and Kawhi Leonard earned the highest average RAPTOR, or impact score.
+
+I heard about a phenomenon going through the 90s where NBA fans saw Michael Jordan as the closest thing to God on earth and therefore named their kids Michael hoping it would give them basketball powers. I tested this using a string_r function to extract the RAPTOR impact scores of all players with "Michael" in their names. I found that players called "Michael" had impact scores close to average, disproving the theory. I then calculated summary statistics for every variable and saw that the average defensive RAPTOR was higher than the average offensive RAPTOR, which I expected. I also demonstrated use of pivot_longer function to better organize the summary statistics data. 
 
 
 #### Visualizing
 
 ```{R}
-# your plot 1
+library("ggplot2")
+ratings_by_minute <- inner_join(player_ratings, total_minutes, by = "player_name")
+ratings_by_minute <- ratings_by_minute %>% filter(raptor > 5)
+ggplot(ratings_by_minute, aes(x = totmin, y = raptor, size = totmin, label = player_name)) + 
+  geom_smooth()+
+  geom_text()+
+  labs(x = "Total Minutes", y = "RAPTOR", title = "Average RAPTOR and Minutes Played") +
+  theme(legend.position = "none")+
+  scale_y_continuous(breaks = seq(0, 10, len = 13))
 ```
 
-Your discussion of plot 1
+In this plot I took the 10 players with the highest average weighted RAPTOR and plotted them along with total minutes played. The size of the text is also correlated with total minutes. I wanted to see which players should have played more given their high impact score but did not. For example Kawhi Leonard had one of the highest average impact but played so few minutes compared to other top players. There was also no correlation between minutes played and average RAPTOR, although I expected higher impact players to play more minutes. In terms of overall value, the players on the top right of this graph would produced the most value, playing at a high impact level for many minutes. 
 
 ```{R}
-# your plot 2
+players <- inner_join(players, player_ratings, by = "player_name")
+top_players <- players %>% filter(raptor > 5)
+ggplot(top_players, aes(x = season, y = raptor_total, color = player_name, label = player_name, linetype = tattoos))+
+  geom_line()+
+  geom_point()+ 
+  labs(x = "Year", y = "RAPTOR", title = "RAPTOR of Top Players Over Time", col = c("Player Name", "Tattoo"))+
+  theme_bw()
 ```
 
-Your discussion of plot 2
+This graph takes those same top players previously identified and shows their impact level over time. I noticed some players had seasons where they showed very low impact, but they did not play many minutes those years so they were able to maintain averages. Those dips correlated with either a very young age (James Harden) or old age (Manu Ginobili). The lines are also dashed or solid based on their tattoo status, but there doesn't seem to be any relationship on this graph. It seems like Chris Paul is the most consistent player here. His RAPTOR score has been near or above 5 his entire career, which earned him the highest average out of all players. The graph also shows Lebron James and Stephen Curry had the best individual seasons in 2009 and 2016 respectively. 
 
 ```{R}
-# your plot 3
+ggplot(players, aes(x = era, y = raptor_offense, fill = tattoos))+
+  geom_bar(stat="summary",fun=mean, position="dodge")+
+  geom_errorbar(stat="summary", fun.data=mean_se, position="dodge")+
+  labs(x = "Era", y = "Offensive RAPTOR", title = "Offensive RAPTOR vs Tattoo Status", col = "Tattoo")+
+  theme_bw()
 ```
 
-Your discussion of plot 3
+This bar chart compares the average Offensive RAPTOR score of all players by Era and tattoo status. As previously seen in the wrangling data, there is a significant increase in Offensive Raptor among players that have tattoos, and this relationship is consistent between Eras. However there is no significant difference between the offensive impact scores of historical and modern players, which surprised me because it's largely accepted in the baskedball community that the league has become more offense focused over the years.  
 
 #### Concluding Remarks
 
